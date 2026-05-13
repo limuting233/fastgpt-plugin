@@ -25,7 +25,7 @@ export default defineTool({
       key: 'baseUrl',
       label: 'Base URL',
       description:
-        '使用 SoMark API 时填写 https://somark.tech/api/v1; 私有化部署时填写本地部署的 Base URL。',
+        '使用 SoMark API 时填写 https://somark.tech/api/v1；私有化部署时填写本地部署的 Base URL。',
       required: true,
       inputType: 'input'
     },

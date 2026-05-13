@@ -25,8 +25,8 @@
 
 | key | inputType | required | 说明 |
 | --- | --- | --- | --- |
-| `baseUrl` | `input` | `true` | 使用 SoMark API 时填写 `https://somark.tech/api/v1`；私有化部署时填写自建 SoMark 服务的 Base URL。 |
-| `apiKey` | `secret` | `false` | 使用 SoMark API 时必填且需以 `sk-` 开头；私有化部署如未启用鉴权，可留空。 |
+| `baseUrl` | `input` | `true` | 使用 SoMark API 时填写 https://somark.tech/api/v1；私有化部署时填写本地部署的 Base URL。 |
+| `apiKey` | `secret` | `false` | 使用 SoMark API 时填写，需以 `sk-` 开头；私有化部署无需填写。|
 
 `secretInputConfig` 协议没有条件必填能力，`apiKey` 在使用 SoMark API 时事实上必填，但配置层只能保持非必填，真正的相关校验在运行时根据 `baseUrl` 自动判断。
 
