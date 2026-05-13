@@ -139,7 +139,7 @@ outputs 路径：`data.data.result.outputs`。
 测试由 5 个 describe 块组成，重点覆盖：
 
 - **request construction**：multipart 字段构造、`POST /parse/sync` 调用参数、`timeout` / `retries`、自定义 baseUrl、baseUrl 尾部斜杠裁剪、空 apiKey 仍以空字符串形式追加到 FormData
-- **validation**：文件 URL 为空、baseUrl 为空 / 空白、官方 API 下 apiKey 为空或不以 `sk-` 开头时拒绝；私有化部署下空 apiKey 与任意 token 均放行
+- **validation**：文件 URL 为空、baseUrl 为空 / 空白、SoMark API 下 apiKey 为空或不以 `sk-` 开头时拒绝；私有化部署下空 apiKey 与任意 token 均放行
 - **file handling**：文件名解析的 3 条主路径与 2 条 fallback（URL 解析失败、URL path 为空、`filename` 查询为空白），以及源文件下载失败
 - **output mapping**：未勾选的输出格式返回空值、部分 outputs 字段返回默认值
 - **error handling**：`code !== 0` 时三级 detail 选择（字符串 error / message 兜底 / unknown error）、`data` 为 `null` 的兜底分支、outputs 缺失
