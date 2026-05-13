@@ -15,7 +15,7 @@ export default defineTool({
   tags: [ToolTagEnum.enum.tools],
   description: {
     'zh-CN':
-      '使用 SoMark 文档解析 工具将各种文档（如 PDF、图片等）转换为结构化的 Markdown 或 JSON 格式。',
+      '使用 SoMark 文档解析工具将各种文档（如 PDF、图片等）转换为结构化的 Markdown 或 JSON 格式。',
     en: 'Convert various document types—including PDFs, images, and more—into structured Markdown or JSON using the SoMark Document Parser.'
   },
   toolDescription:
