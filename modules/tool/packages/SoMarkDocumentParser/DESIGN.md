@@ -37,8 +37,9 @@
 1. `file[0]` 为空 → 抛 `File path is required`
 2. `baseUrl.trim()` 为空 → 抛 `Base URL is required`
 3. 去除 `baseUrl` 末尾多余的斜杠
-4. 当 `baseUrl` 严格等于 `https://somark.tech/api/v1`（SoMark API）时，`apiKey.trim()` 必须以 `sk-` 开头且非空，否则抛 `API Key is invalid, please check the configuration and try again`
-5. 自定义 `baseUrl`（私有化部署）跳过 API Key 校验，`apiKey` 可为空或任意字符串
+4. 校验 `baseUrl` 是否以 `http://` 或 `https://` 开头，否则抛 `Base URL must start with http:// or https://.`
+5. 当 `baseUrl` 严格等于 `https://somark.tech/api/v1`（SoMark API）时，`apiKey.trim()` 必须以 `sk-` 开头且非空，否则抛 `API Key is invalid, please check the configuration and try again`
+6. 自定义 `baseUrl`（私有化部署）跳过 API Key 校验，`apiKey` 可为空或任意字符串
 
 设计动机：
 

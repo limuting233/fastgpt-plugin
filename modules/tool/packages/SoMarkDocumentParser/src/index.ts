@@ -121,7 +121,7 @@ export async function tool(props: InputProps): Promise<OutputProps> {
   handledBaseUrl = handledBaseUrl.replace(/\/+$/, '');
 
   if (!handledBaseUrl.startsWith('http://') && !handledBaseUrl.startsWith('https://')) {
-    throw new Error('Base URL must start with http:// or https://.');
+    throw new Error('Base URL must start with http:// or https://');
   }
 
   const handledApiKey = apiKey.trim();
@@ -139,7 +139,7 @@ export async function tool(props: InputProps): Promise<OutputProps> {
     fileData = await fetchFileBlob(fileUrl);
   } catch {
     throw new Error(
-      'Failed to download file. Please ensure the FastGPT file URL is accessible from the plugin service.'
+      'Failed to download file. Please ensure the FastGPT file URL is accessible from the plugin service'
     );
   }
 
@@ -197,7 +197,7 @@ export async function tool(props: InputProps): Promise<OutputProps> {
     const protocol = handledBaseUrl.startsWith('https://') ? 'HTTPS' : 'HTTP';
     const host = handledBaseUrl.replace(/^https?:\/\//, '');
     throw new Error(
-      `Failed to connect to the SoMark service at ${host}/parse/sync over ${protocol}. Please make sure the service is running and reachable from the plugin runtime.`
+      `Failed to connect to the SoMark service at ${host}/parse/sync over ${protocol}. Please make sure the service is running and reachable from the plugin runtime`
     );
   }
 
