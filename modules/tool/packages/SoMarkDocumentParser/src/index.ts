@@ -9,14 +9,12 @@ const ImageFormatEnum = z.enum(['url', 'base64', 'none']);
 const FormulaFormatEnum = z.enum(['latex', 'mathml', 'ascii']);
 const TableFormatEnum = z.enum(['markdown', 'html', 'image']);
 const ChemicalStructureFormatEnum = z.enum(['image']);
-const DeploymentTypeEnum = z.enum(['api', 'private']);
 const DEFAULT_BASE_URL = 'https://somark.tech/api/v1';
 
 export const InputType = z.object({
   // ----- Secrets (from secretInputConfig) -----
-  deploymentType: DeploymentTypeEnum,
+  baseUrl: z.string(),
   apiKey: z.string().optional().default(''),
-  baseUrl: z.string().optional().default(''),
 
   // ----- File input -----
   // FastGPT fileSelect passes selected file URLs as an array.
@@ -92,7 +90,6 @@ async function fetchFileBlob(fileUrl: string): Promise<{ blob: Blob; filename: s
  */
 export async function tool(props: InputProps): Promise<OutputProps> {
   const {
-    deploymentType,
     apiKey,
     baseUrl,
     file,
@@ -123,35 +120,23 @@ export async function tool(props: InputProps): Promise<OutputProps> {
 
   handledBaseUrl = handledBaseUrl.replace(/\/+$/, '');
 
-  if (deploymentType === 'api' && handledBaseUrl !== DEFAULT_BASE_URL) {
-    throw new Error('Base URL or API Key is invalid, please check the configuration and try again');
-  }
-
   const handledApiKey = apiKey.trim();
 
   if (
-    deploymentType === 'api' &&
+    handledBaseUrl === DEFAULT_BASE_URL &&
     (handledApiKey.length === 0 || !handledApiKey.startsWith('sk-'))
   ) {
-    throw new Error('Base URL or API Key is invalid, please check the configuration and try again');
+    throw new Error('API Key is invalid, please check the configuration and try again');
   }
 
   const { blob, filename } = await fetchFileBlob(fileUrl);
 
-  let url = '';
-
-  if (deploymentType === 'api') {
-    url = '/parse/sync';
-  } else {
-    url = '/extract';
-  }
-
   // --- Build form-data payload ---
   const form = new FormData();
   form.append('file', blob, filename);
-  if (deploymentType === 'api') {
-    form.append('api_key', handledApiKey);
-  }
+
+  form.append('api_key', handledApiKey);
+
   for (const format of outputFormats) {
     form.append('output_formats', format);
   }
@@ -181,17 +166,14 @@ export async function tool(props: InputProps): Promise<OutputProps> {
   const { data } = await POST<{
     code: number;
     message: string;
-    // 公有 API 壳
-    data?: {
+    data: {
       error?: unknown;
       result?: { outputs?: { markdown?: string; json?: Record<string, any> } };
     } | null;
-    // 私有化壳
-    outputs?: { markdown?: string; json?: Record<string, any> };
-  }>(url, form, {
+  }>('/parse/sync', form, {
     baseURL: handledBaseUrl,
     headers: {},
-    timeout: 120_000,
+    timeout: 600_000,
     retries: 1
   });
 
@@ -203,7 +185,7 @@ export async function tool(props: InputProps): Promise<OutputProps> {
     throw new Error(`SoMark API error: ${detail}`);
   }
 
-  const outputs = deploymentType === 'api' ? data?.data?.result?.outputs : data?.outputs;
+  const outputs = data?.data?.result?.outputs;
 
   if (!outputs) {
     throw new Error('SoMark response has no outputs');

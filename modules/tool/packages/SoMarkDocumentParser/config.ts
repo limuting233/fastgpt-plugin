@@ -15,36 +15,24 @@ export default defineTool({
   tags: [ToolTagEnum.enum.tools],
   description: {
     'zh-CN':
-      '使用 SoMark 文档解析工具 将各种文档（如 PDF、图片等）转换为结构化的 Markdown 或 JSON 格式。',
+      '使用 SoMark 文档解析 工具将各种文档（如 PDF、图片等）转换为结构化的 Markdown 或 JSON 格式。',
     en: 'Convert various document types—including PDFs, images, and more—into structured Markdown or JSON using the SoMark Document Parser.'
   },
   toolDescription:
     'A precise and reliable tool that utilizes the SoMark Document Parser to convert various document formats (PDF, PNG, JPG, etc.) into clean, structured Markdown or JSON format, preserving the original layout and content hierarchy.',
   secretInputConfig: [
     {
-      key: 'deploymentType',
-      label: '部署方式',
-      description:
-        '选择"SoMark API"使用官方云服务；如果是自建 SoMark 服务，请选择"SoMark Self-host"。',
-      required: true,
-      inputType: 'select',
-      list: [
-        { label: 'SoMark API', value: 'api' },
-        { label: 'SoMark Self-host', value: 'private' }
-      ]
-    },
-    {
       key: 'baseUrl',
       label: 'Base URL',
       description:
-        '使用SoMark API时填写 https://somark.tech/api/v1;SoMark Self-host 时填写本地部署的Base URL。',
+        '使用 SoMark API 时填写 https://somark.tech/api/v1；私有化部署时填写自建 SoMark 服务的 Base URL。',
       required: true,
       inputType: 'input'
     },
     {
       key: 'apiKey',
       label: 'API Key',
-      description: '使用 SoMark 官方 API 时填写；SoMark Self-host 无需填写',
+      description: '使用 SoMark API 时填写；私有化部署如未启用鉴权，可留空。',
       required: false,
       inputType: 'secret'
     }
@@ -125,7 +113,7 @@ export default defineTool({
         {
           key: 'chemicalStructureFormat',
           label: '化学结构式格式',
-          description: '选择化学结构式元素的返回格式，默认为 Image 格式，仅支持 Image 格式。',
+          description: '选择化学结构式元素的返回格式，默认为 Image 格式，目前仅支持 Image 格式。',
           renderTypeList: [FlowNodeInputTypeEnum.select],
           valueType: WorkflowIOValueTypeEnum.string,
           defaultValue: 'image',
@@ -158,7 +146,7 @@ export default defineTool({
         },
         {
           key: 'enableInlineImage',
-          label: '文中图',
+          label: '返回文中图',
           description: '返回文字段落中的图片',
           renderTypeList: [FlowNodeInputTypeEnum.switch],
           valueType: WorkflowIOValueTypeEnum.boolean,
@@ -166,7 +154,7 @@ export default defineTool({
         },
         {
           key: 'enableTableImage',
-          label: '表格图',
+          label: '返回表格图',
           description: '返回表格单元格内的图片',
           renderTypeList: [FlowNodeInputTypeEnum.switch],
           valueType: WorkflowIOValueTypeEnum.boolean,

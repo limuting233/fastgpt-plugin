@@ -25,11 +25,10 @@
 
 | key | inputType | required | 说明 |
 | --- | --- | --- | --- |
-| `deploymentType` | `select` | `true` | `api` 表示 SoMark API，`private` 表示 SoMark Self-host。 |
-| `baseUrl` | `input` | `true` | SoMark API 模式必须为 `https://somark.tech/api/v1`，Self-host 模式填写包含 API 路径前缀的服务地址。 |
-| `apiKey` | `secret` | `false` | SoMark API 模式必填且需以 `sk-` 开头，Self-host 模式不使用。 |
+| `baseUrl` | `input` | `true` | 使用 SoMark API 时填写 `https://somark.tech/api/v1`，私有化部署如未启用鉴权，可留空。 |
+| `apiKey` | `secret` | `false` | 使用 SoMark API 时填写 `sk-` 开头，私有化部署如未启用鉴权，可留空。 |
 
-`secretInputConfig` 协议没有条件必填能力，`apiKey` 在 SoMark API 模式下事实上必填，但配置层只能保持非必填，真正的模式相关校验在运行时完成。
+`secretInputConfig` 协议没有条件必填能力，`apiKey` 在使用 SoMark API 时填写必填，但配置层只能保持非必填，真正的模式相关校验在运行时完成。
 
 ## 运行时校验
 
@@ -82,12 +81,7 @@ form.append('file', blob, filename)
 
 ## SoMark 请求
 
-接口路径按部署模式分支：
-
-| deploymentType | 路径 |
-| --- | --- |
-| `api` | `POST /parse/sync` |
-| `private` | `POST /extract` |
+接口路径：`POST /extract`
 
 请求配置：
 

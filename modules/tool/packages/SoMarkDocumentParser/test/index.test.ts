@@ -9,8 +9,7 @@ vi.mock('@tool/utils/request', () => ({
 const mockedPOST = vi.mocked(POST);
 const fetchMock = vi.fn();
 
-const DEFAULT_API_BASE_URL = 'https://somark.tech/api/v1';
-const SELF_HOST_BASE_URL = 'https://somark.internal/api/v1';
+const DEFAULT_BASE_URL = 'https://somark.tech/api/v1';
 
 function mockResponse(data: unknown): RequestResponse<unknown> {
   return {
@@ -24,9 +23,8 @@ function mockResponse(data: unknown): RequestResponse<unknown> {
 
 function createInput(overrides: Partial<InputProps> = {}): InputProps {
   return {
-    deploymentType: 'api',
     apiKey: 'sk-test-api-key',
-    baseUrl: DEFAULT_API_BASE_URL,
+    baseUrl: DEFAULT_BASE_URL,
     file: ['https://example.test/sample.pdf'],
     outputFormats: ['json', 'markdown'],
     imageFormat: 'url',
@@ -65,16 +63,6 @@ function mockApiResponse(outputs: { markdown?: string; json?: Record<string, any
   );
 }
 
-function mockSelfHostResponse(outputs: { markdown?: string; json?: Record<string, any> } = {}) {
-  mockedPOST.mockResolvedValueOnce(
-    mockResponse({
-      code: 0,
-      message: 'ok',
-      outputs
-    })
-  );
-}
-
 function getCallForm(): FormData {
   return mockedPOST.mock.calls[0][1] as FormData;
 }
@@ -99,7 +87,7 @@ describe('SoMarkDocumentParser tool', () => {
     vi.unstubAllGlobals();
   });
 
-  describe('SoMark API mode', () => {
+  describe('request construction', () => {
     test('posts to /parse/sync with api_key and parses data.data.result.outputs', async () => {
       mockFetchFile();
       mockApiResponse({ markdown: '# Parsed', json: { pages: 1 } });
@@ -118,9 +106,9 @@ describe('SoMarkDocumentParser tool', () => {
 
       expect(result).toEqual({ markdown: '# Parsed', json: { pages: 1 } });
       expect(mockedPOST).toHaveBeenCalledWith('/parse/sync', expect.any(FormData), {
-        baseURL: DEFAULT_API_BASE_URL,
+        baseURL: DEFAULT_BASE_URL,
         headers: {},
-        timeout: 120_000,
+        timeout: 600_000,
         retries: 1
       });
 
@@ -146,73 +134,93 @@ describe('SoMarkDocumentParser tool', () => {
       });
     });
 
-    test('rejects baseUrl other than the default', async () => {
-      await expect(tool(createInput({ baseUrl: 'https://somark.tech/api/v2' }))).rejects.toThrow(
-        /Base URL or API Key is invalid/
-      );
-      expect(fetchMock).not.toHaveBeenCalled();
-      expect(mockedPOST).not.toHaveBeenCalled();
-    });
-
-    test('rejects empty apiKey', async () => {
-      await expect(tool(createInput({ apiKey: '' }))).rejects.toThrow(
-        /Base URL or API Key is invalid/
-      );
-      expect(mockedPOST).not.toHaveBeenCalled();
-    });
-
-    test('rejects apiKey not starting with sk-', async () => {
-      await expect(tool(createInput({ apiKey: 'test-api-key' }))).rejects.toThrow(
-        /Base URL or API Key is invalid/
-      );
-      expect(mockedPOST).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('SoMark Self-host mode', () => {
-    function selfHostInput(overrides: Partial<InputProps> = {}): InputProps {
-      return createInput({
-        deploymentType: 'private',
-        apiKey: '',
-        baseUrl: SELF_HOST_BASE_URL,
-        ...overrides
-      });
-    }
-
-    test('posts to /extract without api_key and parses data.outputs', async () => {
+    test('accepts a custom baseUrl (e.g. self-host deployment)', async () => {
       mockFetchFile();
-      mockSelfHostResponse({ markdown: '# Private', json: { private: true } });
+      mockApiResponse({ markdown: 'ok', json: {} });
 
-      const result = await tool(selfHostInput());
+      await tool(createInput({ baseUrl: 'https://somark.internal/api/v1' }));
 
-      expect(result).toEqual({ markdown: '# Private', json: { private: true } });
-      expect(mockedPOST).toHaveBeenCalledWith('/extract', expect.any(FormData), {
-        baseURL: SELF_HOST_BASE_URL,
-        headers: {},
-        timeout: 120_000,
-        retries: 1
-      });
+      expect(mockedPOST).toHaveBeenCalledWith(
+        '/parse/sync',
+        expect.any(FormData),
+        expect.objectContaining({ baseURL: 'https://somark.internal/api/v1' })
+      );
+    });
 
-      const entries = getCallEntries();
-      expect(entries.api_key).toBeUndefined();
+    test('forwards api_key form field even when empty', async () => {
+      mockFetchFile();
+      mockApiResponse({ markdown: 'ok', json: {} });
+
+      await tool(createInput({ baseUrl: 'https://somark.internal/api/v1', apiKey: '' }));
+
+      expect(getCallEntries().api_key).toEqual(['']);
     });
 
     test('trims trailing slashes from baseUrl', async () => {
       mockFetchFile();
-      mockSelfHostResponse({ markdown: 'ok', json: {} });
+      mockApiResponse({ markdown: 'ok', json: {} });
 
-      await tool(selfHostInput({ baseUrl: `${SELF_HOST_BASE_URL}///` }));
+      await tool(createInput({ baseUrl: `${DEFAULT_BASE_URL}///` }));
 
       expect(mockedPOST).toHaveBeenCalledWith(
-        '/extract',
+        '/parse/sync',
         expect.any(FormData),
-        expect.objectContaining({ baseURL: SELF_HOST_BASE_URL })
+        expect.objectContaining({ baseURL: DEFAULT_BASE_URL })
       );
+    });
+  });
+
+  describe('validation', () => {
+    test('throws when file URL is empty', async () => {
+      await expect(tool(createInput({ file: [''] }))).rejects.toThrow('File path is required');
+      expect(mockedPOST).not.toHaveBeenCalled();
     });
 
     test('rejects empty baseUrl', async () => {
-      await expect(tool(selfHostInput({ baseUrl: '' }))).rejects.toThrow('Base URL is required');
+      await expect(tool(createInput({ baseUrl: '' }))).rejects.toThrow('Base URL is required');
       expect(mockedPOST).not.toHaveBeenCalled();
+    });
+
+    test('rejects whitespace-only baseUrl', async () => {
+      await expect(tool(createInput({ baseUrl: '   ' }))).rejects.toThrow('Base URL is required');
+      expect(mockedPOST).not.toHaveBeenCalled();
+    });
+
+    test('rejects empty apiKey when using the default baseUrl', async () => {
+      await expect(tool(createInput({ apiKey: '' }))).rejects.toThrow(/API Key is invalid/);
+      expect(mockedPOST).not.toHaveBeenCalled();
+    });
+
+    test('rejects apiKey not starting with sk- when using the default baseUrl', async () => {
+      await expect(tool(createInput({ apiKey: 'test-api-key' }))).rejects.toThrow(
+        /API Key is invalid/
+      );
+      expect(mockedPOST).not.toHaveBeenCalled();
+    });
+
+    test('skips apiKey validation for self-host baseUrl (empty apiKey allowed)', async () => {
+      mockFetchFile();
+      mockApiResponse({ markdown: 'ok', json: {} });
+
+      await expect(
+        tool(createInput({ baseUrl: 'https://somark.internal/api/v1', apiKey: '' }))
+      ).resolves.toBeDefined();
+      expect(mockedPOST).toHaveBeenCalled();
+    });
+
+    test('skips apiKey validation for self-host baseUrl (non-sk- apiKey allowed)', async () => {
+      mockFetchFile();
+      mockApiResponse({ markdown: 'ok', json: {} });
+
+      await expect(
+        tool(
+          createInput({
+            baseUrl: 'https://somark.internal/api/v1',
+            apiKey: 'arbitrary-token'
+          })
+        )
+      ).resolves.toBeDefined();
+      expect(mockedPOST).toHaveBeenCalled();
     });
   });
 
@@ -266,11 +274,6 @@ describe('SoMarkDocumentParser tool', () => {
       await tool(createInput({ file: ['https://example.test/sample.pdf?filename=%20%20%20'] }));
 
       expect((getCallEntries().file[0] as File).name).toBe('document');
-    });
-
-    test('throws when file URL is empty', async () => {
-      await expect(tool(createInput({ file: [''] }))).rejects.toThrow('File path is required');
-      expect(mockedPOST).not.toHaveBeenCalled();
     });
 
     test('throws when source file fetch fails', async () => {
@@ -356,28 +359,13 @@ describe('SoMarkDocumentParser tool', () => {
       await expect(tool(createInput())).rejects.toThrow('SoMark API error: unknown error');
     });
 
-    test('throws when API mode response has no outputs', async () => {
+    test('throws when response has no outputs', async () => {
       mockFetchFile();
       mockedPOST.mockResolvedValueOnce(
         mockResponse({ code: 0, message: 'ok', data: { result: {} } })
       );
 
       await expect(tool(createInput())).rejects.toThrow('SoMark response has no outputs');
-    });
-
-    test('throws when Self-host mode response has no outputs', async () => {
-      mockFetchFile();
-      mockedPOST.mockResolvedValueOnce(mockResponse({ code: 0, message: 'ok' }));
-
-      await expect(
-        tool(
-          createInput({
-            deploymentType: 'private',
-            apiKey: '',
-            baseUrl: SELF_HOST_BASE_URL
-          })
-        )
-      ).rejects.toThrow('SoMark response has no outputs');
     });
   });
 });
