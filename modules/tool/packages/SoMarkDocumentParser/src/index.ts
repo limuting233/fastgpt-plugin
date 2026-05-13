@@ -129,7 +129,17 @@ export async function tool(props: InputProps): Promise<OutputProps> {
     throw new Error('API Key is invalid, please check the configuration and try again');
   }
 
-  const { blob, filename } = await fetchFileBlob(fileUrl);
+  let fileData: { blob: Blob; filename: string };
+
+  try {
+    fileData = await fetchFileBlob(fileUrl);
+  } catch {
+    throw new Error(
+      'Failed to download file. Please ensure the FastGPT file URL is accessible from the plugin service.'
+    );
+  }
+
+  const { blob, filename } = fileData;
 
   // --- Build form-data payload ---
   const form = new FormData();
@@ -163,19 +173,29 @@ export async function tool(props: InputProps): Promise<OutputProps> {
   );
 
   // --- Call SoMark API ---
-  const { data } = await POST<{
-    code: number;
-    message: string;
-    data: {
-      error?: unknown;
-      result?: { outputs?: { markdown?: string; json?: Record<string, any> } };
-    } | null;
-  }>('/parse/sync', form, {
-    baseURL: handledBaseUrl,
-    headers: {},
-    timeout: 600_000,
-    retries: 1
-  });
+  let response;
+
+  try {
+    response = await POST<{
+      code: number;
+      message: string;
+      data: {
+        error?: unknown;
+        result?: { outputs?: { markdown?: string; json?: Record<string, any> } };
+      } | null;
+    }>('/parse/sync', form, {
+      baseURL: handledBaseUrl,
+      headers: {},
+      timeout: 600_000,
+      retries: 1
+    });
+  } catch {
+    throw new Error(
+      `Unable to connect to the SoMark service. Please check that the Base URL is correct, the service is running, and the plugin runtime can access it: ${handledBaseUrl}`
+    );
+  }
+
+  const { data } = response;
 
   if (data?.code !== 0) {
     const detail =
