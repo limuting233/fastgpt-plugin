@@ -120,6 +120,10 @@ export async function tool(props: InputProps): Promise<OutputProps> {
 
   handledBaseUrl = handledBaseUrl.replace(/\/+$/, '');
 
+  if (!handledBaseUrl.startsWith('http://') && !handledBaseUrl.startsWith('https://')) {
+    throw new Error('Base URL must start with http:// or https://.');
+  }
+
   const handledApiKey = apiKey.trim();
 
   if (
@@ -190,8 +194,10 @@ export async function tool(props: InputProps): Promise<OutputProps> {
       retries: 1
     });
   } catch {
+    const protocol = handledBaseUrl.startsWith('https://') ? 'HTTPS' : 'HTTP';
+    const host = handledBaseUrl.replace(/^https?:\/\//, '');
     throw new Error(
-      `Unable to connect to the SoMark service. Please check that the Base URL is correct, the service is running, and the plugin runtime can access it: ${handledBaseUrl}`
+      `Failed to connect to the SoMark service at ${host}/parse/sync over ${protocol}. Please make sure the service is running and reachable from the plugin runtime.`
     );
   }
 
