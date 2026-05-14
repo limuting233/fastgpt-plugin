@@ -129,9 +129,7 @@ function extractErrorDetail(
   data: SubmitResponse | CheckResponse | null | undefined,
   fallback = 'unknown error'
 ): string {
-  return (
-    (typeof data?.data?.status === 'string' ? data.data.status : '') || data?.message || fallback
-  );
+  return data?.message || fallback;
 }
 
 function buildConnectionError(handledBaseUrl: string, endpoint: string): Error {
