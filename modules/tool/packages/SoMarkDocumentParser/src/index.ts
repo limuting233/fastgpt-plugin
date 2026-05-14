@@ -321,7 +321,7 @@ export async function tool(props: InputProps): Promise<OutputProps> {
     })
   );
   form.append(
-    'feature_configs',
+    'feature_config',
     JSON.stringify({
       enable_text_cross_page: enableTextCrossPage,
       enable_table_cross_page: enableTableCrossPage,
