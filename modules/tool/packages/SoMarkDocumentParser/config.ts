@@ -45,13 +45,13 @@ export default defineTool({
         {
           key: 'file',
           label: '文件',
-          description: '待解析的文件，支持 PDF、图片、Office 格式。',
+          description:
+            '待解析的文件，支持 PDF、图片、Office 格式。可上传多个文件，工具会按顺序逐个解析。',
           renderTypeList: [FlowNodeInputTypeEnum.fileSelect, FlowNodeInputTypeEnum.reference],
           valueType: WorkflowIOValueTypeEnum.arrayString,
           required: true,
           canSelectFile: true,
-          canSelectImg: true,
-          maxFiles: 1
+          canSelectImg: true
         },
         {
           key: 'outputFormats',
@@ -179,16 +179,11 @@ export default defineTool({
       ],
       outputs: [
         {
-          valueType: WorkflowIOValueTypeEnum.string,
-          key: 'markdown',
-          label: 'Markdown',
-          description: 'Markdown 格式全文'
-        },
-        {
-          valueType: WorkflowIOValueTypeEnum.object,
-          key: 'json',
-          label: 'JSON',
-          description: 'JSON 格式输出'
+          valueType: WorkflowIOValueTypeEnum.arrayObject,
+          key: 'results',
+          label: '解析结果',
+          description:
+            '每个输入文件对应一个结果，按输入顺序返回。每项包含 markdown（Markdown 全文）和 json（JSON 格式输出）；若该文件解析失败，则额外包含 error 字段说明原因。'
         }
       ]
     }

@@ -123,7 +123,7 @@ describe('SoMarkDocumentParser tool', () => {
         })
       );
 
-      expect(result).toEqual({ markdown: '# Parsed', json: { pages: 1 } });
+      expect(result).toEqual({ results: [{ markdown: '# Parsed', json: { pages: 1 } }] });
 
       expect(mockedPOST).toHaveBeenNthCalledWith(1, '/parse/async', expect.any(FormData), {
         baseURL: DEFAULT_BASE_URL,
@@ -209,8 +209,9 @@ describe('SoMarkDocumentParser tool', () => {
   });
 
   describe('validation', () => {
-    test('throws when file URL is empty', async () => {
-      await expect(tool(createInput({ file: [''] }))).rejects.toThrow('File path is required');
+    test('captures per-file error when a file URL is empty', async () => {
+      const result = await tool(createInput({ file: [''] }));
+      expect(result.results).toEqual([{ markdown: '', json: {}, error: 'File path is required' }]);
       expect(mockedPOST).not.toHaveBeenCalled();
     });
 
@@ -321,12 +322,15 @@ describe('SoMarkDocumentParser tool', () => {
       expect((getSubmitEntries().file[0] as File).name).toBe('document');
     });
 
-    test('throws a friendly error when source file fetch fails', async () => {
+    test('captures per-file error when source file fetch fails', async () => {
       fetchMock.mockResolvedValueOnce(
         new Response('missing', { status: 404, statusText: 'Not Found' })
       );
 
-      await expect(tool(createInput())).rejects.toThrow(/Failed to download file/);
+      const result = await tool(createInput());
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0].error).toMatch(/Failed to download file/);
+      expect(result.results[0].markdown).toBe('');
       expect(mockedPOST).not.toHaveBeenCalled();
     });
   });
@@ -337,8 +341,7 @@ describe('SoMarkDocumentParser tool', () => {
       mockHappyPath({ markdown: 'ignored', json: { kept: true } });
 
       await expect(tool(createInput({ outputFormats: ['json'] }))).resolves.toEqual({
-        markdown: '',
-        json: { kept: true }
+        results: [{ markdown: '', json: { kept: true } }]
       });
     });
 
@@ -347,8 +350,7 @@ describe('SoMarkDocumentParser tool', () => {
       mockHappyPath({ markdown: 'kept', json: { ignored: true } });
 
       await expect(tool(createInput({ outputFormats: ['markdown'] }))).resolves.toEqual({
-        markdown: 'kept',
-        json: {}
+        results: [{ markdown: 'kept', json: {} }]
       });
     });
 
@@ -357,14 +359,13 @@ describe('SoMarkDocumentParser tool', () => {
       mockHappyPath({ markdown: 'only-markdown' });
 
       await expect(tool(createInput())).resolves.toEqual({
-        markdown: 'only-markdown',
-        json: {}
+        results: [{ markdown: 'only-markdown', json: {} }]
       });
     });
   });
 
   describe('submit phase error handling', () => {
-    test('throws SoMark API error using response message', async () => {
+    test('captures SoMark API error using response message', async () => {
       mockFetchFile();
       mockedPOST.mockResolvedValueOnce(
         mockResponse({
@@ -374,28 +375,32 @@ describe('SoMarkDocumentParser tool', () => {
         })
       );
 
-      await expect(tool(createInput())).rejects.toThrow('SoMark API error: request failed');
+      const result = await tool(createInput());
+      expect(result.results[0].error).toBe('SoMark API error: request failed');
     });
 
     test('falls back to "unknown error" when message is empty', async () => {
       mockFetchFile();
       mockedPOST.mockResolvedValueOnce(mockResponse({ code: 500, message: '', data: null }));
 
-      await expect(tool(createInput())).rejects.toThrow('SoMark API error: unknown error');
+      const result = await tool(createInput());
+      expect(result.results[0].error).toBe('SoMark API error: unknown error');
     });
 
-    test('throws when response data is null (code missing)', async () => {
+    test('captures error when response data is null (code missing)', async () => {
       mockFetchFile();
       mockedPOST.mockResolvedValueOnce(mockResponse(null));
 
-      await expect(tool(createInput())).rejects.toThrow('SoMark API error: unknown error');
+      const result = await tool(createInput());
+      expect(result.results[0].error).toBe('SoMark API error: unknown error');
     });
 
     test('wraps network failure with a connection error message (HTTPS)', async () => {
       mockFetchFile();
       mockedPOST.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
-      await expect(tool(createInput())).rejects.toThrow(
+      const result = await tool(createInput());
+      expect(result.results[0].error).toMatch(
         /Failed to connect to the SoMark service .* over HTTPS/
       );
     });
@@ -404,16 +409,17 @@ describe('SoMarkDocumentParser tool', () => {
       mockFetchFile();
       mockedPOST.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
-      await expect(
-        tool(createInput({ baseUrl: 'http://somark.internal/api/v1', apiKey: '' }))
-      ).rejects.toThrow(/over HTTP\b/);
+      const result = await tool(
+        createInput({ baseUrl: 'http://somark.internal/api/v1', apiKey: '' })
+      );
+      expect(result.results[0].error).toMatch(/over HTTP\b/);
     });
 
-    test('retries when SoMark returns QPS limit code (1124)', async () => {
+    test('retries when SoMark returns QPS limit code (1137)', async () => {
       mockFetchFile();
       // First submit: QPS limited, retry
       mockedPOST.mockResolvedValueOnce(
-        mockResponse({ code: 1124, message: 'qps limit', data: null })
+        mockResponse({ code: 1137, message: 'qps limit', data: null })
       );
       // Second submit: success
       mockSubmitSuccess('task-retry');
@@ -422,16 +428,16 @@ describe('SoMarkDocumentParser tool', () => {
 
       const result = await tool(createInput());
 
-      expect(result.markdown).toBe('after-retry');
+      expect(result.results[0].markdown).toBe('after-retry');
       expect(mockedPOST).toHaveBeenCalledTimes(3);
       expect(mockedPOST.mock.calls[0][0]).toBe('/parse/async');
       expect(mockedPOST.mock.calls[1][0]).toBe('/parse/async');
       expect(mockedPOST.mock.calls[2][0]).toBe('/parse/async_check');
     });
 
-    test('throws "currently busy" when QPS retries exhaust the submit budget', async () => {
+    test('captures "currently busy" when QPS retries exhaust the submit budget', async () => {
       mockFetchFile();
-      mockedPOST.mockResolvedValue(mockResponse({ code: 1124, message: 'qps limit', data: null }));
+      mockedPOST.mockResolvedValue(mockResponse({ code: 1137, message: 'qps limit', data: null }));
 
       // 1st call sets deadline = 0 + SUBMIT_BUDGET_MS; subsequent calls land past deadline.
       const nowSpy = vi.spyOn(Date, 'now');
@@ -439,9 +445,8 @@ describe('SoMarkDocumentParser tool', () => {
       nowSpy.mockReturnValue(Number.MAX_SAFE_INTEGER);
 
       try {
-        await expect(tool(createInput())).rejects.toThrow(
-          /SoMark service is currently busy \(QPS limit\)/
-        );
+        const result = await tool(createInput());
+        expect(result.results[0].error).toMatch(/SoMark service is currently busy \(QPS limit\)/);
       } finally {
         nowSpy.mockRestore();
       }
@@ -449,17 +454,18 @@ describe('SoMarkDocumentParser tool', () => {
   });
 
   describe('poll phase error handling', () => {
-    test('throws when check returns non-zero code', async () => {
+    test('captures error when check returns non-zero code', async () => {
       mockFetchFile();
       mockSubmitSuccess();
       mockedPOST.mockResolvedValueOnce(
         mockResponse({ code: 500, message: 'lookup failed', data: null })
       );
 
-      await expect(tool(createInput())).rejects.toThrow('SoMark API error: lookup failed');
+      const result = await tool(createInput());
+      expect(result.results[0].error).toBe('SoMark API error: lookup failed');
     });
 
-    test('throws when task status is FAILED', async () => {
+    test('captures error when task status is FAILED', async () => {
       mockFetchFile();
       mockSubmitSuccess();
       mockedPOST.mockResolvedValueOnce(
@@ -470,7 +476,8 @@ describe('SoMarkDocumentParser tool', () => {
         })
       );
 
-      await expect(tool(createInput())).rejects.toThrow('SoMark task failed: parse error');
+      const result = await tool(createInput());
+      expect(result.results[0].error).toBe('SoMark task failed: parse error');
     });
 
     test('falls back to "task failed" when FAILED response has no message', async () => {
@@ -484,7 +491,8 @@ describe('SoMarkDocumentParser tool', () => {
         })
       );
 
-      await expect(tool(createInput())).rejects.toThrow('SoMark task failed: task failed');
+      const result = await tool(createInput());
+      expect(result.results[0].error).toBe('SoMark task failed: task failed');
     });
 
     test('polls again when status is QUEUING/PROCESSING before success', async () => {
@@ -500,11 +508,11 @@ describe('SoMarkDocumentParser tool', () => {
 
       const result = await tool(createInput());
 
-      expect(result.markdown).toBe('eventually');
+      expect(result.results[0].markdown).toBe('eventually');
       expect(mockedPOST).toHaveBeenCalledTimes(4);
     });
 
-    test('throws when SUCCESS response has no outputs', async () => {
+    test('captures error when SUCCESS response has no outputs', async () => {
       mockFetchFile();
       mockSubmitSuccess();
       mockedPOST.mockResolvedValueOnce(
@@ -515,7 +523,8 @@ describe('SoMarkDocumentParser tool', () => {
         })
       );
 
-      await expect(tool(createInput())).rejects.toThrow('SoMark response has no outputs');
+      const result = await tool(createInput());
+      expect(result.results[0].error).toBe('SoMark response has no outputs');
     });
 
     test('wraps network failure during polling with a connection error', async () => {
@@ -523,10 +532,11 @@ describe('SoMarkDocumentParser tool', () => {
       mockSubmitSuccess();
       mockedPOST.mockRejectedValueOnce(new Error('ECONNRESET'));
 
-      await expect(tool(createInput())).rejects.toThrow(/Failed to connect to the SoMark service/);
+      const result = await tool(createInput());
+      expect(result.results[0].error).toMatch(/Failed to connect to the SoMark service/);
     });
 
-    test('throws timeout error when polling exceeds the poll budget', async () => {
+    test('captures timeout error when polling exceeds the poll budget', async () => {
       mockFetchFile();
       mockSubmitSuccess('task-timeout');
 
@@ -538,12 +548,75 @@ describe('SoMarkDocumentParser tool', () => {
       nowSpy.mockReturnValue(Number.MAX_SAFE_INTEGER); // while-check exits immediately
 
       try {
-        await expect(tool(createInput())).rejects.toThrow(
-          /SoMark task task-timeout timed out after \d+s/
-        );
+        const result = await tool(createInput());
+        expect(result.results[0].error).toMatch(/SoMark task task-timeout timed out after \d+s/);
       } finally {
         nowSpy.mockRestore();
       }
+    });
+  });
+
+  describe('multi-file handling', () => {
+    test('processes files sequentially in input order', async () => {
+      mockFetchFile('a');
+      mockHappyPath({ markdown: 'A', json: { idx: 0 } });
+      mockFetchFile('b');
+      mockHappyPath({ markdown: 'B', json: { idx: 1 } });
+      mockFetchFile('c');
+      mockHappyPath({ markdown: 'C', json: { idx: 2 } });
+
+      const result = await tool(
+        createInput({
+          file: [
+            'https://example.test/a.pdf',
+            'https://example.test/b.pdf',
+            'https://example.test/c.pdf'
+          ]
+        })
+      );
+
+      expect(result.results).toEqual([
+        { markdown: 'A', json: { idx: 0 } },
+        { markdown: 'B', json: { idx: 1 } },
+        { markdown: 'C', json: { idx: 2 } }
+      ]);
+
+      // Verify strict sequencing: fetch → submit → check, repeated per file
+      expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+        'https://example.test/a.pdf',
+        'https://example.test/b.pdf',
+        'https://example.test/c.pdf'
+      ]);
+      expect(mockedPOST).toHaveBeenCalledTimes(6);
+    });
+
+    test('continues remaining files after one fails (partial success)', async () => {
+      // File 1: success
+      mockFetchFile('a');
+      mockHappyPath({ markdown: 'A', json: {} });
+      // File 2: fetch fails
+      fetchMock.mockResolvedValueOnce(
+        new Response('missing', { status: 404, statusText: 'Not Found' })
+      );
+      // File 3: success
+      mockFetchFile('c');
+      mockHappyPath({ markdown: 'C', json: {} });
+
+      const result = await tool(
+        createInput({
+          file: [
+            'https://example.test/a.pdf',
+            'https://example.test/missing.pdf',
+            'https://example.test/c.pdf'
+          ]
+        })
+      );
+
+      expect(result.results).toHaveLength(3);
+      expect(result.results[0]).toEqual({ markdown: 'A', json: {} });
+      expect(result.results[1].markdown).toBe('');
+      expect(result.results[1].error).toMatch(/Failed to download file/);
+      expect(result.results[2]).toEqual({ markdown: 'C', json: {} });
     });
   });
 });

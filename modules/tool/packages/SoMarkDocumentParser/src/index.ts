@@ -19,7 +19,7 @@ export const InputType = z.object({
 
   // ----- 文件输入 -----
   // FastGPT 的 fileSelect 以字符串数组形式传入文件下载 URL
-  file: z.array(z.string()).length(1, 'file is required'),
+  file: z.array(z.string()).min(1, 'file is required'),
 
   // ----- 输出格式 / 元素格式 -----
   outputFormats: z.array(OutputFormatEnum).min(1).default(['json', 'markdown']),
@@ -39,9 +39,16 @@ export const InputType = z.object({
 });
 export type InputProps = z.infer<typeof InputType>;
 
-export const OutputType = z.object({
+// 单个文件的解析结果;部分成功语义下,失败项以 error 字段说明,markdown/json 为空
+export const FileResultType = z.object({
   markdown: z.string().default(''),
-  json: z.record(z.string(), z.any()).default({})
+  json: z.record(z.string(), z.any()).default({}),
+  error: z.string().optional()
+});
+export type FileResult = z.infer<typeof FileResultType>;
+
+export const OutputType = z.object({
+  results: z.array(FileResultType).default([])
 });
 export type OutputProps = z.infer<typeof OutputType>;
 
@@ -245,6 +252,82 @@ async function pollTask(
  * 异步管线让多个并发调用自动在 SoMark 的并发槽位前排队,
  * 而不需要长连接占住客户端资源
  */
+// 解析单个文件:下载 → 提交 → 轮询 → 输出
+async function parseOneFile(
+  fileUrl: string,
+  ctx: {
+    baseURL: string;
+    apiKey: string;
+    outputFormats: InputProps['outputFormats'];
+    imageFormat: InputProps['imageFormat'];
+    formulaFormat: InputProps['formulaFormat'];
+    tableFormat: InputProps['tableFormat'];
+    chemicalStructureFormat: InputProps['chemicalStructureFormat'];
+    enableTextCrossPage: boolean;
+    enableTableCrossPage: boolean;
+    enableTitleLevelRecognition: boolean;
+    enableInlineImage: boolean;
+    enableTableImage: boolean;
+    enableImageUnderstanding: boolean;
+    keepHeaderFooter: boolean;
+  }
+): Promise<FileResult> {
+  if (!fileUrl) {
+    throw new Error('File path is required');
+  }
+
+  let fileData: { blob: Blob; filename: string };
+  try {
+    fileData = await fetchFileBlob(fileUrl);
+  } catch {
+    throw new Error(
+      'Failed to download file. Please ensure the FastGPT file URL is accessible from the plugin service'
+    );
+  }
+
+  const { blob, filename } = fileData;
+  const form = new FormData();
+  form.append('file', blob, filename);
+  form.append('api_key', ctx.apiKey);
+
+  for (const format of ctx.outputFormats) {
+    form.append('output_formats', format);
+  }
+  form.append(
+    'element_formats',
+    JSON.stringify({
+      image: ctx.imageFormat,
+      formula: ctx.formulaFormat,
+      table: ctx.tableFormat,
+      cs: ctx.chemicalStructureFormat
+    })
+  );
+  form.append(
+    'feature_config',
+    JSON.stringify({
+      enable_text_cross_page: ctx.enableTextCrossPage,
+      enable_table_cross_page: ctx.enableTableCrossPage,
+      enable_title_level_recognition: ctx.enableTitleLevelRecognition,
+      enable_inline_image: ctx.enableInlineImage,
+      enable_table_image: ctx.enableTableImage,
+      enable_image_understanding: ctx.enableImageUnderstanding,
+      keep_header_footer: ctx.keepHeaderFooter
+    })
+  );
+
+  const taskId = await submitTask(form, ctx.baseURL);
+  const outputs = await pollTask(taskId, ctx.baseURL, ctx.apiKey);
+
+  if (!outputs) {
+    throw new Error('SoMark response has no outputs');
+  }
+
+  return {
+    markdown: ctx.outputFormats.includes('markdown') ? outputs.markdown ?? '' : '',
+    json: ctx.outputFormats.includes('json') ? outputs.json ?? {} : {}
+  };
+}
+
 export async function tool(props: InputProps): Promise<OutputProps> {
   const {
     apiKey,
@@ -264,25 +347,16 @@ export async function tool(props: InputProps): Promise<OutputProps> {
     keepHeaderFooter
   } = props;
 
-  // --- 校验文件 URL ---
-  const fileUrl = file[0];
-  if (!fileUrl) {
-    throw new Error('File path is required');
-  }
   let handledBaseUrl = baseUrl.trim();
-
   if (handledBaseUrl === '') {
     throw new Error('Base URL is required');
   }
-
   handledBaseUrl = handledBaseUrl.replace(/\/+$/, '');
-
   if (!handledBaseUrl.startsWith('http://') && !handledBaseUrl.startsWith('https://')) {
     throw new Error('Base URL must start with http:// or https://');
   }
 
   const handledApiKey = apiKey.trim();
-
   if (
     handledBaseUrl === DEFAULT_BASE_URL &&
     (handledApiKey.length === 0 || !handledApiKey.startsWith('sk-'))
@@ -290,58 +364,37 @@ export async function tool(props: InputProps): Promise<OutputProps> {
     throw new Error('API Key is invalid, please check the configuration and try again');
   }
 
-  let fileData: { blob: Blob; filename: string };
+  const ctx = {
+    baseURL: handledBaseUrl,
+    apiKey: handledApiKey,
+    outputFormats,
+    imageFormat,
+    formulaFormat,
+    tableFormat,
+    chemicalStructureFormat,
+    enableTextCrossPage,
+    enableTableCrossPage,
+    enableTitleLevelRecognition,
+    enableInlineImage,
+    enableTableImage,
+    enableImageUnderstanding,
+    keepHeaderFooter
+  };
 
-  try {
-    fileData = await fetchFileBlob(fileUrl);
-  } catch {
-    throw new Error(
-      'Failed to download file. Please ensure the FastGPT file URL is accessible from the plugin service'
-    );
+  // 严格串行:SoMark 异步队列上限为 4,串行最稳妥,QPS 退避作为兜底
+  // 部分成功:单文件失败不中断整体,失败项以 error 字段返回
+  const results: FileResult[] = [];
+  for (const fileUrl of file) {
+    try {
+      results.push(await parseOneFile(fileUrl, ctx));
+    } catch (err) {
+      results.push({
+        markdown: '',
+        json: {},
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
   }
 
-  const { blob, filename } = fileData;
-
-  // --- 构造 multipart form-data 请求体 ---
-  const form = new FormData();
-  form.append('file', blob, filename);
-
-  form.append('api_key', handledApiKey);
-
-  for (const format of outputFormats) {
-    form.append('output_formats', format);
-  }
-  form.append(
-    'element_formats',
-    JSON.stringify({
-      image: imageFormat,
-      formula: formulaFormat,
-      table: tableFormat,
-      cs: chemicalStructureFormat
-    })
-  );
-  form.append(
-    'feature_config',
-    JSON.stringify({
-      enable_text_cross_page: enableTextCrossPage,
-      enable_table_cross_page: enableTableCrossPage,
-      enable_title_level_recognition: enableTitleLevelRecognition,
-      enable_inline_image: enableInlineImage,
-      enable_table_image: enableTableImage,
-      enable_image_understanding: enableImageUnderstanding,
-      keep_header_footer: keepHeaderFooter
-    })
-  );
-
-  // --- 提交 + 轮询 ---
-  const taskId = await submitTask(form, handledBaseUrl);
-  const outputs = await pollTask(taskId, handledBaseUrl, handledApiKey);
-
-  if (!outputs) {
-    throw new Error('SoMark response has no outputs');
-  }
-
-  const markdown = outputFormats.includes('markdown') ? outputs.markdown ?? '' : '';
-  const json = outputFormats.includes('json') ? outputs.json ?? {} : {};
-  return { markdown, json };
+  return { results };
 }
