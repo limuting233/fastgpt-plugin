@@ -382,7 +382,7 @@ export async function tool(props: InputProps): Promise<OutputProps> {
   };
 
   // 严格串行:SoMark 异步队列上限为 4,串行最稳妥,QPS 退避作为兜底
-  // 部分成功:单文件失败不中断整体,失败项以 error 字段返回
+  // 单文件失败不中断后续文件,先收集所有结果;若有任何失败,在所有文件跑完后整体抛错
   const results: FileResult[] = [];
   for (const fileUrl of file) {
     try {
@@ -394,6 +394,14 @@ export async function tool(props: InputProps): Promise<OutputProps> {
         error: err instanceof Error ? err.message : String(err)
       });
     }
+  }
+
+  const failedIndexes = results.map((r, i) => (r.error ? i : -1)).filter((i) => i >= 0);
+  if (failedIndexes.length > 0) {
+    const reasons = failedIndexes.map((i) => `[${i}] ${results[i].error}`).join('; ');
+    throw new Error(
+      `${failedIndexes.length} of ${results.length} file(s) failed to parse: ${reasons}`
+    );
   }
 
   return { results };
